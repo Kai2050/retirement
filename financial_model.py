@@ -1,6 +1,6 @@
 """
 ================================================================================
-HOUSEHOLD FINANCIAL LIFE MODEL
+HOUSEHOLD FINANCIAL LIFE MODEL v1.0
 ================================================================================
 Models cashflow year-by-year from current age through retirement until death.
 Compares two scenarios:
@@ -12,8 +12,6 @@ Edit all inputs in the INPUTS section below, then run the script.
 """
 
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 import warnings
 import webbrowser
 import os
@@ -397,95 +395,8 @@ print(f"\n  Excel saved → {excel_a}")
 print(f"  Excel saved → {excel_b}")
 
 # ================================================================================
-# CHART
+# HTML VIEWER GENERATION — runs automatically after Excel export
 # ================================================================================
-
-fig, axes = plt.subplots(2, 1, figsize=(14, 12))
-fig.patch.set_facecolor("#0d1117")
-
-ref_lines = [
-    (age_retirement, f"Retire (age {age_retirement})", "#ffd54f"),
-    (62,             "SS + US Pension (62)",            "#ff8a65"),
-    (67,             "UK Pension (67)",                  "#ce93d8"),
-]
-
-# --- Top: Cumulative Wealth ---
-ax1 = axes[0]
-ax1.set_facecolor("#161b22")
-
-ax1.plot(df_a["age"], df_a["investment_portfolio"],
-         color="#4fc3f7", linewidth=2.5, label="A — Keep Mortgage")
-ax1.plot(df_b["age"], df_b["investment_portfolio"],
-         color="#81c784", linewidth=2.5, linestyle="--", label="B — Pay Off Mortgage")
-
-ax1.fill_between(df_a["age"],
-                 df_a["investment_portfolio"], df_b["investment_portfolio"],
-                 where=(df_a["investment_portfolio"] >= df_b["investment_portfolio"]),
-                 alpha=0.10, color="#4fc3f7")
-ax1.fill_between(df_a["age"],
-                 df_a["investment_portfolio"], df_b["investment_portfolio"],
-                 where=(df_b["investment_portfolio"] >  df_a["investment_portfolio"]),
-                 alpha=0.10, color="#81c784")
-
-ax1.axhline(0, color="#555", linewidth=0.8)
-ylo, yhi = ax1.get_ylim()
-for ref_age, lbl, col in ref_lines:
-    if age_now <= ref_age <= age_death:
-        ax1.axvline(ref_age, color=col, linestyle=":", linewidth=1.3, alpha=0.8)
-        ax1.text(ref_age + 0.2, ylo + (yhi - ylo) * 0.02,
-                 lbl, color=col, fontsize=8, rotation=90, va="bottom")
-
-ax1.set_title("Cumulative Wealth Over Time", color="white", fontsize=13, pad=10)
-ax1.set_ylabel("Wealth ($)", color="#aaa", fontsize=10)
-ax1.set_xlabel("Age", color="#aaa", fontsize=10)
-ax1.tick_params(colors="#aaa")
-ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-ax1.legend(facecolor="#161b22", labelcolor="white", edgecolor="#30363d", fontsize=10)
-ax1.grid(True, color="#21262d", linewidth=0.6)
-for sp in ax1.spines.values():
-    sp.set_edgecolor("#30363d")
-
-# --- Bottom: Annual Net Cashflow ---
-ax2 = axes[1]
-ax2.set_facecolor("#161b22")
-
-ages  = df_a["age"].values
-cf_a  = df_a["net_cashflow"].values / 1_000
-cf_b  = df_b["net_cashflow"].values / 1_000
-w     = 0.38
-
-# Positive and negative bars coloured differently
-ax2.bar(ages - w/2, [v if v >= 0 else 0 for v in cf_a], width=w,
-        color="#4fc3f7", alpha=0.85, label="A — surplus")
-ax2.bar(ages - w/2, [v if v <  0 else 0 for v in cf_a], width=w,
-        color="#ef5350", alpha=0.85, label="A — deficit")
-ax2.bar(ages + w/2, [v if v >= 0 else 0 for v in cf_b], width=w,
-        color="#81c784", alpha=0.85, label="B — surplus")
-ax2.bar(ages + w/2, [v if v <  0 else 0 for v in cf_b], width=w,
-        color="#ff7043", alpha=0.85, label="B — deficit")
-
-ax2.axhline(0, color="#aaa", linewidth=0.8)
-ax2.set_title("Annual Net Cashflow", color="white", fontsize=13, pad=10)
-ax2.set_ylabel("Net Cashflow ($000s)", color="#aaa", fontsize=10)
-ax2.set_xlabel("Age", color="#aaa", fontsize=10)
-ax2.tick_params(colors="#aaa")
-ax2.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"${x:,.0f}k"))
-ax2.legend(facecolor="#161b22", labelcolor="white", edgecolor="#30363d",
-           fontsize=9, ncol=2)
-ax2.grid(True, color="#21262d", linewidth=0.6, axis="y")
-for sp in ax2.spines.values():
-    sp.set_edgecolor("#30363d")
-
-plt.suptitle(
-    f"Financial Life Model  ·  Age {age_now}–{age_death}  ·  Retire at {age_retirement}",
-    color="white", fontsize=14, y=1.01, fontweight="bold"
-)
-plt.tight_layout()
-
-chart_path = "financial_model_chart.png"
-plt.savefig(chart_path, dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
-print(f"  Chart saved  → {chart_path}\n")
-plt.show()
 
 
 
