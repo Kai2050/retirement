@@ -15,4 +15,5 @@ env/
 *.xlsx
 *.png
 *.html
+!interactive_financial_viewer.html
 *.pdf

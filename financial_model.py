@@ -15,6 +15,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import warnings
+import webbrowser
+import os
+import json
 warnings.filterwarnings("ignore")
 
 # ================================================================================
@@ -721,3 +724,253 @@ _html_path = "financial_viewer.html"
 with open(_html_path, 'w') as _f:
     _f.write(_html)
 print(f"  HTML saved   -> {_html_path}")
+
+# ================================================================================
+# INTERACTIVE VIEWER GENERATION
+# ================================================================================
+
+_interactive_template = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Financial Life Model</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117; --sidebar-bg: #161b22; --card-bg: #21262d; --border: #30363d;
+            --text: #c9d1d9; --text-dim: #8b949e; --accent: #58a6ff; --success: #3fb950;
+            --danger: #f85149; --warning: #d29922; --purple: #bc8cff;
+            --font-main: 'Inter', -apple-system, sans-serif;
+            --font-mono: 'IBM Plex Mono', monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background-color: var(--bg); color: var(--text); font-family: var(--font-main); display: flex; height: 100vh; overflow: hidden; }
+        #sidebar { width: 320px; background: var(--sidebar-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto; padding: 20px; }
+        #sidebar h2 { font-size: 16px; font-weight: 600; margin-bottom: 20px; color: #fff; display: flex; align-items: center; gap: 8px; }
+        .input-group { margin-bottom: 18px; }
+        .input-group label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 6px; font-weight: 600; }
+        .input-row { display: flex; align-items: center; gap: 10px; }
+        input[type="range"] { flex: 1; accent-color: var(--accent); height: 4px; }
+        .val-box { width: 80px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; color: var(--accent); font-family: var(--font-mono); font-size: 12px; padding: 4px 8px; text-align: right; outline: none; }
+        #main { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 20px; gap: 0; }
+        .header-strip { display: flex; justify-content: space-between; align-items: center; }
+        .header-strip h1 { font-size: 20px; font-weight: 700; color: #fff; }
+        .kpi-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        .kpi-card { background: rgba(48, 54, 61, 0.4); border-left: 3px solid var(--accent); padding: 8px 12px; border-radius: 4px; }
+        .kpi-card.scen-b { border-left-color: var(--success); }
+        .kpi-card.real-nw { border-left-color: var(--purple); }
+        .kpi-card.real-nw-b { border-left-color: var(--warning); }
+        .kpi-label { font-size: 9px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.5px; margin-bottom: 3px; }
+        .kpi-value { font-size: 14px; font-weight: 700; font-family: var(--font-mono); display: flex; justify-content: space-between; align-items: baseline; }
+        .kpi-sub { font-size: 10px; color: var(--text-dim); font-weight: 400; }
+        #charts-container { display: flex; width: 100%; gap: 20px; height: 800px; margin-bottom: 60px; flex-shrink: 0; }
+        .chart-canvas-wrapper { flex: 1; position: relative; min-height: 0; }
+        .chart-box { flex: 1; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 15px; position: relative; display: flex; flex-direction: column; }
+        .chart-box h3 { font-size: 11px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 1px; margin-bottom: 10px; text-align: center; }
+        #table-wrap { height: 300px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: auto; }
+        table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 11px; }
+        thead { position: sticky; top: 0; z-index: 10; background: #161b22; }
+        th { text-align: right; padding: 10px; border-bottom: 1px solid var(--border); color: var(--text-dim); font-weight: 600; text-transform: uppercase; }
+        td { padding: 8px 10px; text-align: right; border-bottom: 1px solid #161b22; }
+        tr:hover td { background: rgba(88, 166, 255, 0.05); }
+        .sticky-col { position: sticky; left: 0; background: inherit; text-align: left; z-index: 5; }
+        .c-nw { color: var(--warning); font-weight: 600; }
+        .c-port { color: var(--accent); }
+        .c-cf-p { color: var(--success); }
+        .c-cf-n { color: var(--danger); }
+        .c-year { color: var(--text-dim); }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>Parameters</h2>
+        <div class="input-group">
+            <label>Retirement Age</label>
+            <div class="input-row">
+                <input type="range" id="age_retirement" min="55" max="75" value="{{AGE_RETIREMENT}}">
+                <input type="text" id="val_age_retirement" class="val-box" readonly>
+            </div>
+        </div>
+        <div class="input-group">
+            <label>Current Investments ($)</label>
+            <div class="input-row">
+                <input type="range" id="current_investments" min="1000000" max="5000000" step="50000" value="{{CURRENT_INVESTMENTS}}">
+                <input type="text" id="val_current_investments" class="val-box" readonly>
+            </div>
+        </div>
+        <div class="input-group">
+            <label>Investment Gain Rate (%)</label>
+            <div class="input-row">
+                <input type="range" id="investment_gain_rate" min="1" max="10" step="0.1" value="{{INVESTMENT_GAIN_RATE}}">
+                <input type="text" id="val_investment_gain_rate" class="val-box" readonly>
+            </div>
+        </div>
+        <div class="input-group">
+            <label>Inflation Rate (%)</label>
+            <div class="input-row">
+                <input type="range" id="inflation_rate" min="0" max="8" step="0.1" value="{{INFLATION_RATE}}">
+                <input type="text" id="val_inflation_rate" class="val-box" readonly>
+            </div>
+        </div>
+        <div class="input-group">
+            <label>Nik's Annual Income ($)</label>
+            <div class="input-row">
+                <input type="range" id="income_nik" min="50000" max="500000" step="5000" value="{{INCOME_NIK}}">
+                <input type="text" id="val_income_nik" class="val-box" readonly>
+            </div>
+        </div>
+        <div class="input-group">
+            <label>House Price Growth (%)</label>
+            <div class="input-row">
+                <input type="range" id="house_price_growth_rate" min="0" max="10" step="0.1" value="{{HOUSE_PRICE_GROWTH_RATE}}">
+                <input type="text" id="val_house_price_growth_rate" class="val-box" readonly>
+            </div>
+        </div>
+        <div class="input-group">
+            <label>Basic Annual Spend ($)</label>
+            <div class="input-row">
+                <input type="range" id="basic_spending" min="30000" max="200000" step="1000" value="{{BASIC_SPENDING}}">
+                <input type="text" id="val_basic_spending" class="val-box" readonly>
+            </div>
+        </div>
+        <div class="input-group">
+            <label>Medical Costs Retire ($)</label>
+            <div class="input-row">
+                <input type="range" id="medical_costs_retirement" min="0" max="100000" step="1000" value="{{MEDICAL_COSTS_RETIREMENT}}">
+                <input type="text" id="val_medical_costs_retirement" class="val-box" readonly>
+            </div>
+        </div>
+    </div>
+    <div id="main">
+        <div class="header-strip">
+            <h1>Household Financial Model</h1>
+            <div id="scenario-selector" style="display: flex; gap: 5px;">
+                <button id="btn-chart-both" style="background:var(--accent); border:none; color:white; padding: 5px 15px; border-radius: 4px; font-size: 11px; cursor: pointer;">Comparison View</button>
+            </div>
+        </div>
+        <div id="charts-container">
+            <div class="chart-box">
+                <div class="kpi-container">
+                    <div class="kpi-card">
+                        <div class="kpi-label">Portfolio (A) · 80 | 85</div>
+                        <div id="kpi-port-a" class="kpi-value"><span id="port-a-80">$0</span> <span class="kpi-sub">|</span> <span id="port-a-85">$0</span></div>
+                    </div>
+                    <div class="kpi-card scen-b">
+                        <div class="kpi-label">Portfolio (B) · 80 | 85</div>
+                        <div id="kpi-port-b" class="kpi-value"><span id="port-b-80">$0</span> <span class="kpi-sub">|</span> <span id="port-b-85">$0</span></div>
+                    </div>
+                </div>
+                <h3>Investment Portfolio</h3>
+                <div class="chart-canvas-wrapper"><canvas id="mainChart"></canvas></div>
+            </div>
+            <div class="chart-box">
+                <div class="kpi-container">
+                    <div class="kpi-card real-nw">
+                        <div class="kpi-label">Real NW (A) · 80 | 85</div>
+                        <div class="kpi-value"><span id="real-a-80">$0</span> <span class="kpi-sub">|</span> <span id="real-a-85">$0</span></div>
+                    </div>
+                    <div class="kpi-card real-nw-b">
+                        <div class="kpi-label">Real NW (B) · 80 | 85</div>
+                        <div class="kpi-value"><span id="real-b-80">$0</span> <span class="kpi-sub">|</span> <span id="real-b-85">$0</span></div>
+                    </div>
+                </div>
+                <h3>Real Net Worth (Inflation-Adjusted)</h3>
+                <div class="chart-canvas-wrapper"><canvas id="realNwChart"></canvas></div>
+            </div>
+        </div>
+        <div id="table-wrap">
+            <table id="details-table">
+                <thead><tr><th class="sticky-col">Year/Age</th><th>Port Start</th><th>Port End</th><th>Net CF</th><th>House Val</th><th>Net Worth</th><th>Real NW</th></tr></thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+        const CONSTS = {{CONSTS_JSON}};
+        function solveRate(b, p, y) {
+            let n = y * 12, r = 0.005;
+            for (let i = 0; i < 2000; i++) {
+                let f = Math.pow(1+r,n), d=f-1;
+                if(Math.abs(d)<1e-14)break;
+                let val=b*r*f/d-p, dv=b*(f*(n*r+1)-n*r-f)/Math.pow(d,2);
+                if(Math.abs(dv)<1e-14)break;
+                let rn=r-val/dv; if(Math.abs(rn-r)<1e-10){r=rn;break;} r=rn;
+            } return r;
+        }
+        const M_RATE = solveRate(CONSTS.REMAINING_MORTGAGE, CONSTS.MONTHLY_MORTGAGE_PAYMENT, CONSTS.MORTGAGE_YEARS_REMAINING);
+        function amort(bal, r, p) {
+            let tp=0, ti=0;
+            for(let i=0;i<12;i++){ if(bal<=0)break; let int=bal*r, pr=Math.max(0,Math.min(p-int,bal)); bal-=pr; tp+=int+pr; ti+=int; }
+            return {bal, tp, ti};
+        }
+        function runModel(p, payoff) {
+            let rows=[], port=p.current_investments-CONSTS.MPEG_BALANCE, bal=payoff?0:CONSTS.REMAINING_MORTGAGE, m=payoff?0:CONSTS.MORTGAGE_YEARS_REMAINING*12, inf=1.0;
+            if(payoff) port-=CONSTS.REMAINING_MORTGAGE;
+            for(let i=0; i<=(CONSTS.AGE_DEATH-CONSTS.AGE_NOW); i++) {
+                let age=CONSTS.AGE_NOW+i, year=CONSTS.CALENDAR_YEAR_NOW+i;
+                if(i>0) inf*=(1+p.inflation_rate/100);
+                let working=(age<p.age_retirement), gross=working?(p.income_nik+CONSTS.INCOME_OG):0, gains=Math.max(0,port)*(p.investment_gain_rate/100);
+                let ss=(age>=62)?(CONSTS.SS_NIK_MONTHLY+CONSTS.SS_OG_MONTHLY)*12*inf:0, pUs=(age>=62)?CONSTS.PENSION_NIK_US_MONTHLY*12*inf:0, pUk=(age>=67)?CONSTS.PENSION_NIK_UK_MONTHLY*12*inf:0;
+                let incTax=0; if(working && gross>0) incTax=Math.max(0,gross-CONSTS.SALT_DEDUCTION*inf)*(CONSTS.TAX_RATE_WORKING/100); else if(!working && (ss+pUs+pUk)>0) incTax=(ss+pUs+pUk)*(CONSTS.TAX_RATE_RETIREMENT/100);
+                let aPmt=0; if(m>0){ let a=amort(bal,M_RATE,CONSTS.MONTHLY_MORTGAGE_PAYMENT); bal=a.bal; aPmt=a.tp; m-=12; }
+                let cf=(gross+gains+ss+pUs+pUk)-(incTax+gains*(CONSTS.TAX_RATE_INVESTMENT/100)+aPmt+CONSTS.YEARLY_PROPERTY_TAX+CONSTS.YEARLY_HOME_INSURANCE*inf+p.basic_spending*inf+(working?CONSTS.CHILD_COSTS*inf:0)+(working?0:p.medical_costs_retirement*inf)+(CONSTS.ONE_OFF_COSTS[year]||0));
+                let ps=port; port+=cf;
+                rows.push({age,year,ps,pe:port,cf,hv:CONSTS.CURRENT_HOUSE_VALUE*Math.pow(1+p.house_price_growth_rate/100,i),nw:port+(CONSTS.CURRENT_HOUSE_VALUE*Math.pow(1+p.house_price_growth_rate/100,i)-bal),rnw:(port+(CONSTS.CURRENT_HOUSE_VALUE*Math.pow(1+p.house_price_growth_rate/100,i)-bal))/inf});
+            } return rows;
+        }
+        let myChart=null, myRealNwChart=null;
+        const fmt=v=>'$'+Math.round(v).toLocaleString(), inputs=['age_retirement','current_investments','investment_gain_rate','inflation_rate','income_nik','house_price_growth_rate','basic_spending','medical_costs_retirement'];
+        function createChart(ctx, labs, ds, retAge) {
+            return new Chart(ctx, { type:'line', data:{labels:labs, datasets:ds}, options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false}, plugins:{ legend:{labels:{color:'#8b949e',font:{size:10},boxWidth:10}}, tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmt(c.parsed.y)}} }, scales:{ y:{grid:{color:'#30363d'},ticks:{color:'#8b949e',callback:v=>(v/1e6).toFixed(1)+'M'},beginAtZero:true}, x:{display:true,grid:{display:false},ticks:{color:'#8b949e',autoSkip:true,maxRotation:0}} }, retireAge:retAge }, plugins:[{id:'vLines',afterDraw:chart=>{const{ctx,chartArea,scales}=chart;const dl=(age,col,l)=>{const x=scales.x.getPixelForValue(age);if(x>=chartArea.left&&x<=chartArea.right){ctx.save();ctx.beginPath();ctx.setLineDash([4,4]);ctx.strokeStyle=col;ctx.lineWidth=1;ctx.moveTo(x,chartArea.top);ctx.lineTo(x,chartArea.bottom);ctx.stroke();ctx.fillStyle=col;ctx.font='9px Inter';ctx.textAlign='center';ctx.fillText(l,x,chartArea.top-5);ctx.restore();}};dl(chart.options.retireAge,'#ffd54f','Retire');dl(80,'#8b949e','Age 80');}}] });
+        }
+        function update() {
+            let p={}; inputs.forEach(id=>{let el=document.getElementById(id),v=parseFloat(el.value);p[id]=v;document.getElementById('val_'+id).value=(id.includes('rate')||id.includes('age'))?v+(id.includes('age')?'':'%'):fmt(v);});
+            let dA=runModel(p,false), dB=runModel(p,true), labs=dA.map(r=>r.age);
+            const gv=(d,a,k)=>{let r=d.find(x=>x.age===a)||d[d.length-1]; return fmt(r[k]);};
+            ['port-a-80','port-a-85','port-b-80','port-b-85','real-a-80','real-a-85','real-b-80','real-b-85'].forEach((id,i)=>{let s=id.split('-'),d=s[1]==='a'?dA:dB,a=parseInt(s[2]),k=s[0]==='port'?'pe':'rnw'; document.getElementById(id).innerText=gv(d,a,k);});
+            const pDs=[{label:'A (Keep)',data:dA.map(r=>r.pe),borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,0.1)',fill:true,tension:0.3},{label:'B (Payoff)',data:dB.map(r=>r.pe),borderColor:'#3fb950',borderDash:[5,5],fill:false,tension:0.3}];
+            const rDs=[{label:'A (Keep)',data:dA.map(r=>r.rnw),borderColor:'#bc8cff',backgroundColor:'rgba(188,140,255,0.1)',fill:true,tension:0.3},{label:'B (Payoff)',data:dB.map(r=>r.rnw),borderColor:'#d29922',borderDash:[5,5],fill:false,tension:0.3}];
+            if(myChart){ myChart.data.labels=labs; myChart.data.datasets=pDs; myChart.options.retireAge=p.age_retirement; myChart.update('none'); } else myChart=createChart(document.getElementById('mainChart').getContext('2d'),labs,pDs,p.age_retirement);
+            if(myRealNwChart){ myRealNwChart.data.labels=labs; myRealNwChart.data.datasets=rDs; myRealNwChart.options.retireAge=p.age_retirement; myRealNwChart.update('none'); } else myRealNwChart=createChart(document.getElementById('realNwChart').getContext('2d'),labs,rDs,p.age_retirement);
+            let t=''; dA.forEach(r=>{ t+=`<tr><td class="sticky-col c-year">Age ${r.age} (${r.year})</td><td>${fmt(r.ps)}</td><td class="c-port">${fmt(r.pe)}</td><td class="${r.cf>=0?'c-cf-p':'c-cf-n'}">${fmt(r.cf)}</td><td>${fmt(r.hv)}</td><td class="c-nw">${fmt(r.nw)}</td><td class="c-nw">${fmt(r.rnw)}</td></tr>`; });
+            document.getElementById('table-body').innerHTML=t;
+        }
+        inputs.forEach(id=>document.getElementById(id).addEventListener('input',update));
+        update();
+    </script>
+</body>
+</html>"""
+
+_consts = {
+    "AGE_NOW": age_now, "AGE_DEATH": age_death, "CALENDAR_YEAR_NOW": calendar_year_now, "INCOME_OG": income_og,
+    "TAX_RATE_WORKING": tax_rate_working, "TAX_RATE_RETIREMENT": tax_rate_retirement, "TAX_RATE_INVESTMENT": tax_rate_investment,
+    "SALT_DEDUCTION": salt_deduction, "CURRENT_HOUSE_VALUE": current_house_value, "REMAINING_MORTGAGE": remaining_mortgage,
+    "MONTHLY_MORTGAGE_PAYMENT": monthly_mortgage_payment, "MORTGAGE_YEARS_REMAINING": mortgage_years_remaining,
+    "YEARLY_PROPERTY_TAX": yearly_property_tax, "YEARLY_HOME_INSURANCE": yearly_home_insurance, "CHILD_COSTS": child_costs,
+    "MPEG_BALANCE": mpeg_balance, "SS_NIK_MONTHLY": ss_nik_monthly, "SS_OG_MONTHLY": ss_og_monthly,
+    "PENSION_NIK_US_MONTHLY": pension_nik_us_monthly, "PENSION_NIK_UK_MONTHLY": pension_nik_uk_monthly,
+    "ONE_OFF_COSTS": one_off_costs
+}
+
+_interactive_html = _interactive_template.replace("{{CONSTS_JSON}}", json.dumps(_consts))
+_interactive_html = _interactive_html.replace("{{AGE_RETIREMENT}}", str(age_retirement))
+_interactive_html = _interactive_html.replace("{{CURRENT_INVESTMENTS}}", str(current_investments))
+_interactive_html = _interactive_html.replace("{{INVESTMENT_GAIN_RATE}}", str(investment_gain_rate))
+_interactive_html = _interactive_html.replace("{{INFLATION_RATE}}", str(inflation_rate))
+_interactive_html = _interactive_html.replace("{{INCOME_NIK}}", str(income_nik))
+_interactive_html = _interactive_html.replace("{{HOUSE_PRICE_GROWTH_RATE}}", str(house_price_growth_rate))
+_interactive_html = _interactive_html.replace("{{BASIC_SPENDING}}", str(basic_spending))
+_interactive_html = _interactive_html.replace("{{MEDICAL_COSTS_RETIREMENT}}", str(medical_costs_retirement))
+
+_interactive_path = "interactive_financial_viewer.html"
+with open(_interactive_path, 'w') as _f:
+    _f.write(_interactive_html)
+print(f"  Interactive -> {_interactive_path}")
+
+# Open in browser
+webbrowser.open('file://' + os.path.realpath(_interactive_path))
