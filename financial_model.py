@@ -54,7 +54,7 @@ yearly_home_insurance    =    11_000  # Annual home insurance ($)
 
 # --- Living Expenses ------------------------------------------------------------
 basic_spending       = 78_000  # Annual spending excl. house costs & child costs — inflates every year ($)
-child_costs          = 60_000  # Annual child costs — WORKING YEARS ONLY ($)
+child_costs          = 61_000  # Annual child costs — WORKING YEARS ONLY ($)
 medical_costs_retirement = 20_000  # Annual medical costs — RETIREMENT ONLY ($)
 
 # --- US Income Streams (activate at age 62) ------------------------------------
